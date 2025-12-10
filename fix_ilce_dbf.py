@@ -66,6 +66,17 @@ def norm(text: str) -> str:
     return cleaned
 
 
+def to_ascii_upper(text: str) -> str:
+    """
+    Türkçe karakterleri ASCII'ye çevirip büyük harfe çıkarır.
+    """
+    cleaned = unicodedata.normalize("NFKD", text)
+    cleaned = cleaned.translate(TR_MAP)
+    cleaned = "".join(ch for ch in cleaned if not unicodedata.combining(ch))
+    cleaned = cleaned.encode("ascii", "ignore").decode("ascii")
+    return cleaned.upper()
+
+
 def build_lookup(ref_rows: List[dict]) -> Dict[str, Dict[str, str]]:
     """
     Referans JSON listesinden il -> {normalized: canonical} sözlüğü üretir.
@@ -128,10 +139,13 @@ def apply_updates(
     record_len: int,
     adi_offset: int,
     adi_length: int,
-    set_codepage_cp1254: bool = True,
+    field_meta: List[Tuple[str, int, int]],
+    encoding: str = "cp1254",
+    codepage_byte: int | None = 202,
+    write_cpg: bool = True,
 ) -> None:
     """
-    İstenen kayıtların ADI alanını cp1254 ile yazar.
+    İstenen kayıtların ADI alanını belirtilen encoding ile yazar.
     updates: (record_index, new_value) listesi.
     """
     src_resolved = src.resolve()
@@ -146,14 +160,20 @@ def apply_updates(
 
     data = bytearray(target.read_bytes())
 
-    if set_codepage_cp1254:
-        # dBase codepage marker byte (offset 29) -> 202 (cp1254)
-        data[29] = 202
+    # dBase codepage marker byte (offset 29)
+    if codepage_byte is not None:
+        data[29] = codepage_byte
+
+    # Alan displacement'lerini düzelt (dBase field descriptor offset 12-15, little-endian)
+    desc_start = 32
+    for idx, (_name, field_offset, _field_len) in enumerate(field_meta):
+        pos = desc_start + idx * 32 + 12
+        data[pos : pos + 4] = int(field_offset).to_bytes(4, "little")
 
     for rec_idx, new_value in updates:
         record_start = header_len + rec_idx * record_len
         field_start = record_start + adi_offset
-        encoded = new_value.encode("cp1254", errors="replace")[:adi_length]
+        encoded = new_value.encode(encoding, errors="replace")[:adi_length]
         encoded = encoded.ljust(adi_length, b" ")
         data[field_start : field_start + adi_length] = encoded
 
@@ -161,6 +181,10 @@ def apply_updates(
 
     if target is not dest:
         target.replace(dest)
+
+    if write_cpg:
+        cpg_path = dest.with_suffix(".cpg")
+        cpg_path.write_text("UTF-8" if encoding.lower() == "utf-8" else "CP1254", encoding="ascii")
 
 
 def main() -> None:
@@ -192,6 +216,26 @@ def main() -> None:
         action="store_true",
         help="Header codepage baytını cp1254 olarak güncelleme.",
     )
+    parser.add_argument(
+        "--no-cpg",
+        action="store_true",
+        help=".cpg dosyasını yazma (varsayılan: CP1254 yazar).",
+    )
+    parser.add_argument(
+        "--utf8",
+        action="store_true",
+        help="ADI alanını UTF-8 yazar, codepage baytını 0xF0 ve .cpg'yi UTF-8 yapar.",
+    )
+    parser.add_argument(
+        "--ascii",
+        action="store_true",
+        help="ADI alanını aksansız ASCII (büyük harf) yazar (ş->s, ç->c, ğ->g...).",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Değer değişmese bile ADI alanlarını yeniden yazar (yeniden kodlamak için).",
+    )
     args = parser.parse_args()
 
     src_dbf = args.dbf_path
@@ -210,6 +254,11 @@ def main() -> None:
     if "ADI" not in offsets:
         raise SystemExit("ADI alanı bulunamadı.")
 
+    field_meta: List[Tuple[str, int, int]] = []
+    for f in table.fields:
+        off, flen = offsets[f.name.upper()]
+        field_meta.append((f.name, off, flen))
+
     header_len = table.header.headerlen
     record_len = table.header.recordlen
     adi_offset, adi_length = offsets["ADI"]
@@ -226,19 +275,23 @@ def main() -> None:
             # Referansta bulunamazsa mevcut adı tamamen büyük harfe çevir.
             suggestion = current.upper()
 
-        if suggestion != current:
+        if args.ascii:
+            suggestion = to_ascii_upper(suggestion)
+
+        if suggestion != current or args.utf8 or args.force:
             updates.append((idx, suggestion))
             report_lines.append(f"FIX  | {il:<10} | '{current}' -> '{suggestion}'")
         else:
             report_lines.append(f"OK   | {il:<10} | '{current}'")
 
-    if not updates:
-        print("Değiştirilecek kayıt bulunamadı; çıktı üretilmedi.")
-        return
-
     print("Önizleme:")
     for line in report_lines:
         print(line)
+
+    encoding = "utf-8" if args.utf8 else "cp1254"
+    codepage_byte = 0xF0 if args.utf8 else 202
+    if args.no_codepage:
+        codepage_byte = None
 
     apply_updates(
         src=src_dbf,
@@ -248,9 +301,15 @@ def main() -> None:
         record_len=record_len,
         adi_offset=adi_offset,
         adi_length=adi_length,
-        set_codepage_cp1254=not args.no_codepage,
+        field_meta=field_meta,
+        encoding=encoding,
+        codepage_byte=codepage_byte,
+        write_cpg=not args.no_cpg,
     )
-    print(f"\nYazıldı: {out_dbf} (toplam {len(updates)} kayıt güncellendi)")
+    if updates:
+        print(f"\nYazıldı: {out_dbf} (toplam {len(updates)} kayıt güncellendi)")
+    else:
+        print(f"\nDeğişiklik yok, header/codepage/.cpg güncellendi: {out_dbf}")
 
 
 if __name__ == "__main__":
