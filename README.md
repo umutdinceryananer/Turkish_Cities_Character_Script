@@ -1,27 +1,21 @@
-### Ne İşe Yarar?
-`fix_ilce_dbf.py`, shapefile’lerin `.dbf` tablosundaki ilçe adlarını, `ilceler.json` referansına bakarak otomatik düzeltir. `IlAdi` alanına göre doğru ilçe adını bulur, `ADI` alanını cp1254 kodlamasıyla yazar. Referansta bulunamasa bile mevcut adı TAMAMEN BÜYÜK harfe çevirir. Varsayılan davranış: aynı dosya adına yazar (temp kopya alıp üzerine yazar); istersen farklı dosya adı verebilirsin.
+`fix_ilce_dbf.py`, shapefile’in `.dbf` dosyasındaki ilçe adlarını `ilceler.json` referansına göre düzeltir, `ADI` alanını cp1254 yazar ve adı tamamen BÜYÜK harfe çevirir. Varsayılan: aynı dosya adına yazar (temp alır).
 
-### Gereksinimler
+Gereksinimler  
 - Python 3.8+  
-- Paketler: `dbfread`, `dbf`  
-Kurulum: `python -m pip install --user dbfread dbf`
+- `python -m pip install --user -r requirements.txt`
 
-### Kullanım
-1) Varsayılan (aynı dosyaya yazar, temp alır):  
-   `python fix_ilce_dbf.py kars_ilce_sinirlar.dbf ilceler.json`
+Kullanım  
+- Varsayılan (aynı dosya adına yazar):  
+  `python fix_ilce_dbf.py kars_ilce_sinirlar.dbf ilceler.json`
+- Farklı dosya adı:  
+  `python fix_ilce_dbf.py kars_ilce_sinirlar.dbf ilceler.json --out kars_ilce_sinirlar_fixed.dbf`
 
-2) Farklı dosya adına yazmak:  
-   `python fix_ilce_dbf.py kars_ilce_sinirlar.dbf ilceler.json --out kars_ilce_sinirlar_fixed.dbf`
+Parametreler  
+- `dbf_path`: DBF dosyası  
+- `ref_json`: il/ilçe referansı (UTF-8 JSON)  
+- `--out`: Çıktı yolu (verilmezse girdi dosyasının üzerine yazar)  
+- `--in-place`: Aynı dosyaya yazacağını açıkça belirtir  
+- `--no-codepage`: Header codepage (cp1254) set etme
 
-3) Konsolda “Önizleme” satırlarını kontrol et; yazılan dosyayı shapefile’ın DBF’i olarak kullan.
-
-### Parametreler
-- `dbf_path`: Düzeltilmesi istenen DBF yolu.  
-- `ref_json`: İl/ilçe referansı (UTF-8 JSON, `ilce_adi` ve `sehir_adi` alanları).  
-- `--out`: Çıktı dosya yolu (verilmezse girdi dosyasının üzerine yazar).  
-- `--in-place`: (İsteğe bağlı) aynı dosya adına yazacağını açıkça belirtir.  
-- `--no-codepage`: Header’daki codepage baytını cp1254 (202) olarak set etmez.
-
-### Notlar
-- İsim düzeltmeleri tamamen `ilceler.json` içeriğine göre yapılır; başka yazım değişikliği isterseniz referans dosyasını güncelleyin.
-- Geometri ve diğer alanlar değiştirilmez, sadece `ADI` alanı güncellenir.
+Not  
+- Geometri ve diğer alanlar değişmez, sadece `ADI` güncellenir; `ilceler.json` içeriği neyse onu kullanır.
