@@ -1,0 +1,23 @@
+# Ortam / Python
+__pycache__/
+.venv/
+*.pyc
+*.pyo
+
+# Shapefile bileşenleri ve türevleri (büyük dosyaları takip etme)
+*.dbf
+*.shp
+*.shx
+*.prj
+*.cpg
+*.zip
+*.tmp
+
+# Üretilen/deneme DBF kopyaları
+*_fixed*.dbf
+*tmp.dbf
+
+# İstisnalar (takipte kalsın)
+!fix_ilce_dbf.py
+!ilceler.json
+!README.md
